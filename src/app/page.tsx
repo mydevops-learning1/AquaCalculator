@@ -36,8 +36,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { Droplets, CircleDollarSign, ReceiptText, Save, TrendingUp, RefreshCcw, Calendar, History } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import { db } from "@/lib/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { Droplets, CircleDollarSign, ReceiptText, Save, TrendingUp, RefreshCcw, Calendar, History, LogOut, CloudUpload, CloudDownload, User as UserIcon } from "lucide-react";
 
 const initialReadings = FLATS.reduce(
   (acc, flat) => ({ ...acc, [flat]: 0 }),
@@ -59,6 +71,8 @@ const MONTHS = [
 
 export default function AquaCalcPage() {
   const { toast } = useToast();
+  const { user, signOut } = useAuth();
+  
   const [history, setHistory] = useLocalStorage<HistoryData>(
     "aqua-calc-history",
     {}
@@ -80,26 +94,27 @@ export default function AquaCalcPage() {
       setCurrentReadings(savedData.currentReadings);
       setTotalBill(savedData.totalBill);
     } else {
-      // Try to find last month's data to pre-fill previous readings
-      const lastMonth = new Date(year, month -1);
+      const lastMonth = new Date(year, month - 1);
       const lastMonthKey = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}`;
       const lastMonthData = history[lastMonthKey];
       if (lastMonthData) {
         setPreviousReadings(lastMonthData.currentReadings);
+        // Reset current readings for the new month
+        setCurrentReadings(initialReadings);
       } else {
         setPreviousReadings(initialReadings);
+        setCurrentReadings(initialReadings);
       }
-      setCurrentReadings(initialReadings);
       setTotalBill(0);
     }
-  }, [year, month, history, selectedPeriodKey]);
+  }, [year, month, history]);
 
 
   const calculations = useMemo(() => {
     const consumptionData = FLATS.map((flat) => {
       const prev = Number(previousReadings[flat] || 0);
       const curr = Number(currentReadings[flat] || 0);
-      const consumption = curr > prev ? curr - prev : 0;
+      const consumption = curr >= prev ? curr - prev : 0;
       return { flat, consumption };
     });
 
@@ -138,8 +153,6 @@ export default function AquaCalcPage() {
         description: `Current reading for ${flat} cannot be less than its previous reading.`,
         variant: "destructive",
       });
-      // Optionally reset the value
-      // setCurrentReadings((prev) => ({ ...prev, [flat]: previousVal }));
     }
   };
 
@@ -149,9 +162,8 @@ export default function AquaCalcPage() {
     setTotalBill(value === "" ? 0 : parseFloat(value));
   };
   
-  const handleYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setYear(value === "" ? new Date().getFullYear() : parseInt(value, 10));
+  const handleYearChange = (value: string) => {
+     setYear(value === "" ? new Date().getFullYear() : parseInt(value, 10));
   }
 
   const handleMonthChange = (value: string) => {
@@ -170,7 +182,7 @@ export default function AquaCalcPage() {
     setHistory(newHistory);
     toast({
       title: "Readings Saved",
-      description: `Readings for ${MONTHS[month]} ${year} have been saved.`,
+      description: `Readings for ${MONTHS[month]} ${year} have been saved locally.`,
       variant: "default",
     });
   };
@@ -184,6 +196,43 @@ export default function AquaCalcPage() {
       description: "Current month's readings and total bill have been reset.",
     });
   };
+  
+  const backupData = async () => {
+    if (!user) {
+      toast({ title: "Error", description: "You must be logged in to back up data.", variant: "destructive" });
+      return;
+    }
+    try {
+      const userDocRef = doc(db, "userReadings", user.uid);
+      await setDoc(userDocRef, { history });
+      toast({ title: "Backup Successful", description: "Your readings have been backed up to the cloud." });
+    } catch (error) {
+      console.error("Error backing up data: ", error);
+      toast({ title: "Backup Failed", description: "Could not back up data. Please try again.", variant: "destructive" });
+    }
+  };
+
+  const restoreData = async () => {
+    if (!user) {
+      toast({ title: "Error", description: "You must be logged in to restore data.", variant: "destructive" });
+      return;
+    }
+    try {
+      const userDocRef = doc(db, "userReadings", user.uid);
+      const docSnap = await getDoc(userDocRef);
+      if (docSnap.exists()) {
+        const cloudHistory = docSnap.data().history as HistoryData;
+        setHistory(cloudHistory);
+        toast({ title: "Restore Successful", description: "Your readings have been restored from the cloud." });
+      } else {
+        toast({ title: "No Backup Found", description: "No cloud backup was found for your account.", variant: "destructive" });
+      }
+    } catch (error) {
+      console.error("Error restoring data: ", error);
+      toast({ title: "Restore Failed", description: "Could not restore data. Please try again.", variant: "destructive" });
+    }
+  };
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-IN", {
@@ -193,19 +242,65 @@ export default function AquaCalcPage() {
   };
 
   const sortedHistoryKeys = Object.keys(history).sort().reverse();
+  
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - i);
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 lg:p-8">
+    <>
+    <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+                <div className="flex items-center gap-2">
+                    <Droplets className="w-8 h-8 text-primary" />
+                    <h1 className="font-headline text-2xl font-bold tracking-tight text-primary">
+                        AquaCalc
+                    </h1>
+                </div>
+                <div className="flex items-center gap-4">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                                <Avatar className="h-10 w-10">
+                                    <AvatarImage src={user?.photoURL ?? undefined} alt={user?.displayName ?? "User"} />
+                                    <AvatarFallback>
+                                        <UserIcon/>
+                                    </AvatarFallback>
+                                </Avatar>
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent className="w-56" align="end" forceMount>
+                            <DropdownMenuLabel className="font-normal">
+                                <div className="flex flex-col space-y-1">
+                                    <p className="text-sm font-medium leading-none">{user?.displayName}</p>
+                                    <p className="text-xs leading-none text-muted-foreground">
+                                        {user?.email}
+                                    </p>
+                                </div>
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={backupData}>
+                                <CloudUpload className="mr-2 h-4 w-4" />
+                                <span>Backup to Cloud</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={restoreData}>
+                                <CloudDownload className="mr-2 h-4 w-4" />
+                                <span>Restore from Cloud</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={signOut}>
+                                <LogOut className="mr-2 h-4 w-4" />
+                                <span>Log out</span>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
+            </div>
+        </div>
+    </header>
+    <main className="p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto space-y-8">
-        <header className="text-center">
-          <h1 className="font-headline text-4xl font-bold tracking-tight text-primary sm:text-5xl">
-            AquaCalc
-          </h1>
-          <p className="mt-2 text-lg text-muted-foreground">
-            Monthly Water Bill Calculator
-          </p>
-        </header>
-
+        
         <Card>
           <CardHeader>
              <CardTitle className="flex items-center gap-2">
@@ -228,14 +323,17 @@ export default function AquaCalcPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="year-input">Year</Label>
-              <Input 
-                id="year-input"
-                type="number"
-                placeholder="e.g. 2024"
-                value={year}
-                onChange={handleYearChange}
-              />
+              <Label htmlFor="year-select">Year</Label>
+              <Select value={String(year)} onValueChange={handleYearChange}>
+                <SelectTrigger id="year-select">
+                  <SelectValue placeholder="Select year" />
+                </SelectTrigger>
+                <SelectContent>
+                  {yearOptions.map(y => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
@@ -374,6 +472,7 @@ export default function AquaCalcPage() {
                   const [histYear, histMonthNum] = key.split('-').map(Number);
                   const histMonth = MONTHS[histMonthNum - 1];
                   const histData = history[key];
+                  if (!histData) return null;
                   const histTotalConsumption = FLATS.reduce((sum, flat) => {
                     const prev = histData.previousReadings[flat] || 0;
                     const curr = histData.currentReadings[flat] || 0;
@@ -427,5 +526,6 @@ export default function AquaCalcPage() {
         )}
       </div>
     </main>
+    </>
   );
 }
