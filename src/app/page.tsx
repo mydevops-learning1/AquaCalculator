@@ -122,6 +122,18 @@ export default function AquaCalcPage() {
   };
 
   const handleCurrentReadingChange = (flat: FlatName, value: string) => {
+    const currentVal = value === "" ? 0 : parseInt(value, 10);
+    const previousVal = previousReadings[flat] || 0;
+
+    if (currentVal > 0 && currentVal < previousVal) {
+      toast({
+        title: "Invalid Reading",
+        description: `Current reading for ${flat} cannot be less than its previous reading.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setCurrentReadings((prev) => ({
       ...prev,
       [flat]: value === "" ? 0 : parseInt(value, 10),
