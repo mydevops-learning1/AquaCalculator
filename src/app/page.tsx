@@ -60,7 +60,14 @@ export default function AquaCalcPage() {
     return { totalConsumption, costPerLitre, billingData };
   }, [currentReadings, previousReadings, totalBill]);
 
-  const handleReadingChange = (flat: FlatName, value: string) => {
+  const handlePreviousReadingChange = (flat: FlatName, value: string) => {
+    setPreviousReadings((prev) => ({
+      ...prev,
+      [flat]: value === "" ? 0 : parseInt(value, 10),
+    }));
+  };
+
+  const handleCurrentReadingChange = (flat: FlatName, value: string) => {
     setCurrentReadings((prev) => ({
       ...prev,
       [flat]: value === "" ? 0 : parseInt(value, 10),
@@ -83,10 +90,11 @@ export default function AquaCalcPage() {
 
   const handleResetCurrent = () => {
     setCurrentReadings(initialReadings);
+    setPreviousReadings(initialReadings);
     setTotalBill(0);
     toast({
       title: "Inputs Cleared",
-      description: "Current readings and total bill have been reset.",
+      description: "All readings and total bill have been reset.",
     });
   };
 
@@ -116,7 +124,7 @@ export default function AquaCalcPage() {
               Meter Readings &amp; Total Bill
             </CardTitle>
             <CardDescription>
-              Enter the current meter readings for each flat and the total water bill for this month.
+              Enter the meter readings for each flat and the total water bill.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -134,20 +142,32 @@ export default function AquaCalcPage() {
                 />
               </div>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4">
+            <div className="space-y-4">
               {FLATS.map((flat) => (
-                <div key={flat} className="space-y-1.5">
-                  <Label htmlFor={flat} className="font-medium">{flat}</Label>
-                  <Input
-                    id={flat}
-                    type="number"
-                    placeholder="Current Reading (L)"
-                    value={currentReadings[flat] || ""}
-                    onChange={(e) => handleReadingChange(flat, e.target.value)}
-                  />
-                   <p className="text-xs text-muted-foreground">
-                    Last: {previousReadings[flat] || 0} L
-                  </p>
+                <div key={flat} className="space-y-2 p-4 border rounded-lg">
+                  <Label className="font-semibold text-base">{flat}</Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`${flat}-prev`}>Previous Reading (L)</Label>
+                      <Input
+                        id={`${flat}-prev`}
+                        type="number"
+                        placeholder="e.g., 10000"
+                        value={previousReadings[flat] || ""}
+                        onChange={(e) => handlePreviousReadingChange(flat, e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor={`${flat}-curr`}>Current Reading (L)</Label>
+                      <Input
+                        id={`${flat}-curr`}
+                        type="number"
+                        placeholder="e.g., 11000"
+                        value={currentReadings[flat] || ""}
+                        onChange={(e) => handleCurrentReadingChange(flat, e.target.value)}
+                      />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
