@@ -122,7 +122,14 @@ export default function AquaCalcPage() {
   };
 
   const handleCurrentReadingChange = (flat: FlatName, value: string) => {
-    const currentVal = value === "" ? 0 : parseInt(value, 10);
+    setCurrentReadings((prev) => ({
+      ...prev,
+      [flat]: value === "" ? 0 : parseInt(value, 10),
+    }));
+  };
+
+  const handleCurrentReadingBlur = (flat: FlatName) => {
+    const currentVal = currentReadings[flat] || 0;
     const previousVal = previousReadings[flat] || 0;
 
     if (currentVal > 0 && currentVal < previousVal) {
@@ -131,14 +138,11 @@ export default function AquaCalcPage() {
         description: `Current reading for ${flat} cannot be less than its previous reading.`,
         variant: "destructive",
       });
-      return;
+      // Optionally reset the value
+      // setCurrentReadings((prev) => ({ ...prev, [flat]: previousVal }));
     }
-
-    setCurrentReadings((prev) => ({
-      ...prev,
-      [flat]: value === "" ? 0 : parseInt(value, 10),
-    }));
   };
+
 
   const handleTotalBillChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -284,6 +288,7 @@ export default function AquaCalcPage() {
                         placeholder="e.g., 11000"
                         value={currentReadings[flat] || ""}
                         onChange={(e) => handleCurrentReadingChange(flat, e.target.value)}
+                        onBlur={() => handleCurrentReadingBlur(flat)}
                       />
                     </div>
                   </div>
